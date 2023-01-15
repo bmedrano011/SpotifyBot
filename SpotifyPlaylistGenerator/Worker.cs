@@ -3,11 +3,13 @@ public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
     private IConfiguration _config;
+    private readonly IHttpClientFactory _httpClientFactory;
 
-    public Worker(ILogger<Worker> logger, IConfiguration config)
+    public Worker(ILogger<Worker> logger, IConfiguration config, IHttpClientFactory httpClientFactory)
     {
         _logger = logger;
         _config = config;
+        _httpClientFactory = httpClientFactory;
     }
 
     //https://github.com/JohnnyCrazy/SpotifyAPI-NET/tree/master/SpotifyAPI.Web.Auth
@@ -23,9 +25,9 @@ public class Worker : BackgroundService
 
             var spotify = new SpotifyClient(config.WithToken(response.AccessToken));
 
-            var user = await spotify.UserProfile.Current();
+            var spotifyClientBuilder = new SpotifyClientBuilder();
+            //GEt token
 
-            Console.WriteLine(user.DisplayName);
         }
     }
 }
