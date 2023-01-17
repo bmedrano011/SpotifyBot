@@ -24,12 +24,18 @@ public class UnitTest1
     [TestMethod]
     public void Extract_Artists_Names()
     {
-        var mockLogger = new Mock<ILogger<Worker>>();
+        var mock = new Mock<ILogger<Worker>>();
+        ILogger<Worker> logger = mock.Object;
+        //or use this short equivalent 
+        logger = Mock.Of<ILogger<Worker>>();
+
         var api = new Mock<IAPIConnector>();
         var config = SpotifyClientConfig.CreateDefault("FakeToken").WithAPIConnector(api.Object);
         var spotify = new SpotifyClient(config);
 
-        SpotifyBot spotifyBot = new SpotifyBot(mockLogger, spotifyClient);
+        SpotifyBot spotifyBot = new SpotifyBot(logger, spotify);
+
+
     }
 
 }
