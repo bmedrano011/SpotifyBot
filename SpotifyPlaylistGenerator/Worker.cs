@@ -1,5 +1,3 @@
-
-
 namespace SpotifyPlaylistGenerator;
 public class Worker : BackgroundService
 {
@@ -26,24 +24,21 @@ public class Worker : BackgroundService
             var request = new ClientCredentialsRequest(_config["ClientID"], _config["ClientSecret"]);
             var response = await new OAuthClient(config).RequestToken(request);
 
-            // string token = await GenerateAccessToken();
-
-            // var spotify = new SpotifyClient(config.WithToken(response.AccessToken));
             Console.WriteLine("Spotify API");
             AccessToken token = GetToken().Result;
-            //var tokenExtracted = String.Format("Access Token: {0}", token.access_token);
 
             var spotify = new SpotifyClient(config.WithToken(token.access_token));
-            var userProfile = await spotify.UserProfile.Current();
+
+            SpotifyBot spotifyBot = new SpotifyBot(_logger, spotify);
+            await spotifyBot.Run();
 
         }
     }
 
     private async Task<AccessToken> GetToken()
     {
-        Console.WriteLine("Getting Token");
-        string clientId = "30162b7b6e2648159d45966fd6ed2074";
-        string clientSecret = "7ce889a3ce794695a4ec1277b1fd4079";
+        string clientId = _config["ClientID"];
+        string clientSecret = _config["ClientSecret"];
         string credentials = String.Format("{0}:{1}", clientId, clientSecret);
 
         using (var client = new HttpClient())
@@ -57,7 +52,6 @@ public class Worker : BackgroundService
             //Prepare Request Body
             List<KeyValuePair<string, string>> requestData = new List<KeyValuePair<string, string>>();
             requestData.Add(new KeyValuePair<string, string>("grant_type", "client_credentials"));
-            // requestData.Add(new KeyValuePair<string, string>("Spotify", "access_token"));
 
             FormUrlEncodedContent requestBody = new FormUrlEncodedContent(requestData);
 
@@ -68,4 +62,3 @@ public class Worker : BackgroundService
         }
     }
 }
-
