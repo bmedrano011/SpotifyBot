@@ -21,8 +21,8 @@ public class SpotifyBot
         watch.Start();
 
         await DeletePlaylistTracks();
-        await AddTrackToPlaylist();
-        //TODO: Get tracks from top artists; some songs arent in the genre list?
+        await GetGenreArtists();
+
         watch.Stop();
 
         Console.WriteLine($"Execution Time: {Decimal.Parse(watch.ElapsedMilliseconds.ToString())} ms, {Decimal.Parse((watch.ElapsedMilliseconds / 1000).ToString())} s, {Decimal.Parse((watch.ElapsedMilliseconds / 1000 / 60).ToString())} mins");
@@ -32,7 +32,8 @@ public class SpotifyBot
     #region Private Variables
     private SpotifyClient _spotify;
     private ILogger<Worker> _logger;
-    private Dictionary<string, string>? Artists = new Dictionary<string, string>();
+    private List<string> ArtistsNames = new List<string>();
+    private List<string> SongURIS = new List<string>();
     private List<string> Genres = new List<string>(){
             "reggaeton",
             "trap latino",
@@ -40,11 +41,16 @@ public class SpotifyBot
             "latin hip hop",
             "reggaeton flow",
         };
+    private List<string> ExclusionArtists = new List<string>(){
+            "Dj Cumbio",
+            "Reggaeton Latino",
+            "Reggaetone",
+        };
     private string _playlistID = "25FqRZoYPOXC3qFIMUXppP";
     #endregion
 
     #region Private Methods
-    private async Task AddTrackToPlaylist()
+    private async Task GetGenreArtists()
     {
         foreach (var genre in Genres)
         {
@@ -55,20 +61,22 @@ public class SpotifyBot
                 var searchResults = await _spotify.Search.Item(searchRequest);
 
                 decimal index = 1;
-                await foreach (var track in _spotify.Paginate(searchResults.Tracks, (s) => s.Tracks))
+                await foreach (var artist in _spotify.Paginate(searchResults.Artists, (s) => s.Artists))
                 {
-                    decimal? percentage = (index / searchResults.Tracks.Total) * 100;
+                    if (ExclusionArtists.Find(ea => ea == artist.Name) is not null) continue;
+
+                    if (ArtistsNames.Find(a => a == artist.Name) is not null) continue;
+
+                    ArtistsNames.Add(artist.Name);
+                    await GetArtistAlbums(artist);
+
+                    decimal? percentage = (index / searchResults.Artists.Total) * 100;
                     decimal percentageFormatted = decimal.Round(Decimal.Parse(percentage.ToString()), 2, MidpointRounding.AwayFromZero);
                     index++;
                     if (percentageFormatted % 3 == 0)
                     {
-                        Console.WriteLine($"AddTrackToPlaylist: {genre} - Completed:  {percentageFormatted}%");
-                    }
+                        Console.WriteLine($"GetGenreArtists: {artist.Name} - Completed:  {percentageFormatted}%");
 
-                    if (AlbumDateWithinRange(track.Album.ReleaseDate) && track.Popularity > 15)
-                    {
-                        Console.WriteLine("Song: {0} in Album {1} within Date Range (21 days) {2} ", track.Name, track.Album.Name, track.Album.ReleaseDate);
-                        await AddSongToPlaylist(track);
                     }
                 }
             }
@@ -76,8 +84,8 @@ public class SpotifyBot
             {
                 Console.WriteLine(e.Message);
                 Console.WriteLine(e.Response?.StatusCode);
-                Console.WriteLine("APITooManyRequestsException waiting 30 seconds");
-                System.Threading.Thread.Sleep(30000);
+                Console.WriteLine($"GetGenreArtists: APITooManyRequestsException waiting {e.RetryAfter} seconds");
+                System.Threading.Thread.Sleep(e.RetryAfter);
             }
             catch (APIException e)
             {
@@ -88,7 +96,93 @@ public class SpotifyBot
             {
                 Console.WriteLine(ex);
             }
+        }
+    }
+    private async Task GetArtistAlbums(SpotifyAPI.Web.FullArtist artist)
+    {
+        try
+        {
+            var searchResults = await _spotify.Artists.GetAlbums(artist.Id);
 
+            decimal index = 1;
+            await foreach (var album in _spotify.Paginate(searchResults))
+            {
+                decimal? percentage = (index / searchResults.Total) * 100;
+                decimal percentageFormatted = decimal.Round(Decimal.Parse(percentage.ToString()), 2, MidpointRounding.AwayFromZero);
+                index++;
+                if (percentageFormatted % 10 == 0)
+                {
+                    Console.WriteLine($"GetArtistAlbums: {artist.Name} - Completed:  {percentageFormatted}%");
+                    System.Threading.Thread.Sleep(10000);
+                }
+
+                if (AlbumDateWithinRange(album.ReleaseDate) && album.AlbumType != "compilation")
+                {
+                    Console.WriteLine("Album {0} within Date Range (21 days) {1} ", album.Name, album.ReleaseDate);
+                    await GetAlbumTracks(album);
+                }
+
+            }
+        }
+        catch (APITooManyRequestsException e)
+        {
+            Console.WriteLine(e.Message);
+            Console.WriteLine(e.Response?.StatusCode);
+            Console.WriteLine($"GetArtistAlbums: APITooManyRequestsException waiting {e.RetryAfter} seconds");
+            System.Threading.Thread.Sleep(e.RetryAfter);
+        }
+        catch (APIException e)
+        {
+            Console.WriteLine(e.Message);
+            Console.WriteLine(e.Response?.StatusCode);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
+        }
+    }
+    private async Task GetAlbumTracks(SimpleAlbum album)
+    {
+        try
+        {
+            List<string> albumTrackUris = new List<string>();
+            var searchResults = await _spotify.Albums.GetTracks(album.Id);
+
+            decimal index = 1;
+            await foreach (var track in _spotify.Paginate(searchResults))
+            {
+                decimal? percentage = (index / searchResults.Total) * 100;
+                decimal percentageFormatted = decimal.Round(Decimal.Parse(percentage.ToString()), 2, MidpointRounding.AwayFromZero);
+                index++;
+                if (percentageFormatted % 5 == 0)
+                {
+                    Console.WriteLine($"GetAlbumTracks: {album.Name} - Completed:  {percentageFormatted}%");
+                    System.Threading.Thread.Sleep(5000);
+                }
+
+                if (SongURIS.Find(uri => uri == track.Uri) is not null) continue;
+
+                SongURIS.Add(track.Uri);
+                albumTrackUris.Add(track.Uri);
+            }
+
+            await AddSongsToPlaylist(albumTrackUris);
+        }
+        catch (APITooManyRequestsException e)
+        {
+            Console.WriteLine(e.Message);
+            Console.WriteLine(e.Response?.StatusCode);
+            Console.WriteLine($"GetAlbumTracks: APITooManyRequestsException waiting {e.RetryAfter} seconds");
+            System.Threading.Thread.Sleep(e.RetryAfter);
+        }
+        catch (APIException e)
+        {
+            Console.WriteLine(e.Message);
+            Console.WriteLine(e.Response?.StatusCode);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
         }
     }
     private bool AlbumDateWithinRange(string date)
@@ -111,6 +205,7 @@ public class SpotifyBot
 
             if (playlist.Tracks.Total == 0) return;
 
+            decimal? index = 1;
             while (hasNext || (playlist.Tracks.Total < 100 && playlist.Tracks.Total > 0))
             {
                 Console.WriteLine($"Playlist: {playlist.Name} - {playlist.Tracks.Total} songs");
@@ -134,14 +229,23 @@ public class SpotifyBot
 
                 playlist = await _spotify.Playlists.Get(_playlistID);
                 hasNext = playlist.Tracks.Next is not null ? true : false;
+
+                decimal? percentage = (index / playlistIds.Count()) * 100;
+                decimal percentageFormatted = decimal.Round(Decimal.Parse(percentage.ToString()), 2, MidpointRounding.AwayFromZero);
+                index++;
+                if (percentageFormatted % 10 == 0)
+                {
+                    Console.WriteLine($"DeletePlaylistTracks - Completed:  {percentageFormatted}%");
+                    System.Threading.Thread.Sleep(10000);
+                }
             }
         }
         catch (APITooManyRequestsException e)
         {
             Console.WriteLine(e.Message);
             Console.WriteLine(e.Response?.StatusCode);
-            Console.WriteLine("APITooManyRequestsException waiting 30 seconds");
-            System.Threading.Thread.Sleep(30000);
+            Console.WriteLine($"DeletePlaylistTracks: APITooManyRequestsException waiting {e.RetryAfter} seconds");
+            System.Threading.Thread.Sleep(e.RetryAfter);
         }
         catch (APIException e)
         {
@@ -153,21 +257,21 @@ public class SpotifyBot
             Console.WriteLine(ex);
         }
     }
-    private async Task AddSongToPlaylist(SpotifyAPI.Web.FullTrack track)
+    private async Task AddSongsToPlaylist(List<string> trackURIs)
     {
         try
         {
-            Console.WriteLine($"Adding Track {track.Name}");
+            Console.WriteLine($"Adding Tracks to playlist: {trackURIs.Count()} ");
 
-            PlaylistAddItemsRequest request = new PlaylistAddItemsRequest(new List<string> { track.Uri });
+            PlaylistAddItemsRequest request = new PlaylistAddItemsRequest(trackURIs);
             var update = await _spotify.Playlists.AddItems(_playlistID, request);
         }
         catch (APITooManyRequestsException e)
         {
             Console.WriteLine(e.Message);
             Console.WriteLine(e.Response?.StatusCode);
-            Console.WriteLine("APITooManyRequestsException waiting 30 seconds");
-            System.Threading.Thread.Sleep(30000);
+            Console.WriteLine($"AddSongsToPlaylist: APITooManyRequestsException waiting {e.RetryAfter} seconds");
+            System.Threading.Thread.Sleep(e.RetryAfter);
         }
         catch (APIException e)
         {
