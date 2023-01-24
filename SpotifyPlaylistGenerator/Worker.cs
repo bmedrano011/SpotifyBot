@@ -1,9 +1,12 @@
+using SpotifyAPI.Web.Auth;
+
 namespace SpotifyPlaylistGenerator;
 public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
     private IConfiguration _config;
-
+    private static readonly EmbedIOAuthServer _server = new EmbedIOAuthServer(new Uri("http://localhost:5000/callback"), 5000);
+    private const string CredentialsPath = "credentials.json";
 
     public Worker(ILogger<Worker> logger, IConfiguration config)
     {
@@ -11,28 +14,25 @@ public class Worker : BackgroundService
         _config = config;
     }
 
-    //https://github.com/JohnnyCrazy/SpotifyAPI-NET/tree/master/SpotifyAPI.Web.Auth
-    //https://johnnycrazy.github.io/SpotifyAPI-NET/docs/getting_started
-    //https://developer.spotify.com/console/get-current-user/
-    //https://medium.com/dotvvm/using-net-core-worker-services-in-a-dotvvm-web-application-fd23463b975f
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        while (!stoppingToken.IsCancellationRequested)
+        string clientId = _config["ClientID"];
+        if (string.IsNullOrEmpty(clientId))
         {
-            var config = SpotifyClientConfig.CreateDefault();
-            var request = new ClientCredentialsRequest(_config["ClientID"], _config["ClientSecret"]);
-            var response = await new OAuthClient(config).RequestToken(request);
-
-            Console.WriteLine("Spotify API");
-            AccessToken token = GetToken().Result;
-
-            var spotify = new SpotifyClient(config.WithToken(token.access_token));
-
-            SpotifyBot spotifyBot = new SpotifyBot(_logger, spotify);
-            await spotifyBot.Run();
-
+            throw new NullReferenceException(
+              "Please set SPOTIFY_CLIENT_ID via environment variables before starting the program"
+            );
         }
+
+        if (File.Exists(CredentialsPath))
+        {
+            await Start(clientId);
+        }
+        else
+        {
+            await StartAuthentication(clientId);
+        }
+
     }
 
     private async Task<AccessToken> GetToken()
@@ -61,4 +61,71 @@ public class Worker : BackgroundService
             return JsonConvert.DeserializeObject<AccessToken>(response);
         }
     }
+
+    private async Task Start(string clientId)
+    {
+        var json = await File.ReadAllTextAsync(CredentialsPath);
+        var token = JsonConvert.DeserializeObject<PKCETokenResponse>(json);
+
+        var authenticator = new PKCEAuthenticator(clientId!, token!);
+        authenticator.TokenRefreshed += (sender, token) => File.WriteAllText(CredentialsPath, JsonConvert.SerializeObject(token));
+
+        var config = SpotifyClientConfig.CreateDefault()
+          .WithAuthenticator(authenticator);
+
+        var spotify = new SpotifyClient(config);
+
+        var me = await spotify.UserProfile.Current();
+        Console.WriteLine($"Welcome {me.DisplayName} ({me.Id}), you're authenticated!");
+
+        SpotifyBot spotifyBot = new SpotifyBot(_logger, spotify);
+        await spotifyBot.Run();
+
+        _server.Dispose();
+        Environment.Exit(0);
+    }
+
+    private async Task StartAuthentication(string clientId)
+    {
+        var (verifier, challenge) = PKCEUtil.GenerateCodes();
+
+        await _server.Start();
+        _server.AuthorizationCodeReceived += async (sender, response) =>
+        {
+            await _server.Stop();
+            PKCETokenResponse token = await new OAuthClient().RequestToken(
+            new PKCETokenRequest(clientId!, response.Code, _server.BaseUri, verifier)
+          );
+
+            await File.WriteAllTextAsync(CredentialsPath, JsonConvert.SerializeObject(token));
+            await Start(clientId);
+        };
+
+        var request = new LoginRequest(_server.BaseUri, clientId!, LoginRequest.ResponseType.Code)
+        {
+            CodeChallenge = challenge,
+            CodeChallengeMethod = "S256",
+            Scope = new List<string> {
+                UserReadEmail,
+                UserReadPrivate,
+                PlaylistReadPrivate,
+                PlaylistReadCollaborative,
+                PlaylistModifyPrivate,
+                PlaylistModifyPublic,
+            }
+        };
+
+        Uri uri = request.ToUri();
+        try
+        {
+            BrowserUtil.Open(uri);
+        }
+        catch (Exception)
+        {
+            Console.WriteLine("Unable to open URL, manually open: {0}", uri);
+        }
+    }
 }
+
+
+
