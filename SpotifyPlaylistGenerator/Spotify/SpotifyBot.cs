@@ -22,9 +22,10 @@ public class SpotifyBot
 
         await DeletePlaylistTracks();
         await AddTrackToPlaylist();
+        //TODO: Get tracks from top artists; some songs arent in the genre list?
         watch.Stop();
 
-        Console.WriteLine($"Execution Time: {watch.ElapsedMilliseconds} ms, {watch.ElapsedMilliseconds / 1000} s, {watch.ElapsedMilliseconds / 1000 / 60} mins");
+        Console.WriteLine($"Execution Time: {Decimal.Parse(watch.ElapsedMilliseconds.ToString())} ms, {Decimal.Parse((watch.ElapsedMilliseconds / 1000).ToString())} s, {Decimal.Parse((watch.ElapsedMilliseconds / 1000 / 60).ToString())} mins");
     }
     #endregion
 
@@ -56,18 +57,18 @@ public class SpotifyBot
                 decimal index = 1;
                 await foreach (var track in _spotify.Paginate(searchResults.Tracks, (s) => s.Tracks))
                 {
-                    if (AlbumDateWithinRange(track.Album.ReleaseDate) && track.Popularity > 10)
-                    {
-                        Console.WriteLine("Song: {0} in Album {1} within Date Range (14 days) {2} ", track.Name, track.Album.Name, track.Album.ReleaseDate);
-                        await AddSongToPlaylist(track);
-                    }
-
                     decimal? percentage = (index / searchResults.Tracks.Total) * 100;
                     decimal percentageFormatted = decimal.Round(Decimal.Parse(percentage.ToString()), 2, MidpointRounding.AwayFromZero);
                     index++;
-                    if (percentageFormatted % 5 == 0)
+                    if (percentageFormatted % 3 == 0)
                     {
-                        Console.WriteLine("AddTrackToPlaylist Progress: {0}", percentageFormatted);
+                        Console.WriteLine($"AddTrackToPlaylist: {genre} - Completed:  {percentageFormatted}%");
+                    }
+
+                    if (AlbumDateWithinRange(track.Album.ReleaseDate) && track.Popularity > 15)
+                    {
+                        Console.WriteLine("Song: {0} in Album {1} within Date Range (21 days) {2} ", track.Name, track.Album.Name, track.Album.ReleaseDate);
+                        await AddSongToPlaylist(track);
                     }
                 }
             }
@@ -101,7 +102,6 @@ public class SpotifyBot
         }
         return isWithinRange;
     }
-
     private async Task DeletePlaylistTracks()
     {
         try
@@ -153,7 +153,6 @@ public class SpotifyBot
             Console.WriteLine(ex);
         }
     }
-
     private async Task AddSongToPlaylist(SpotifyAPI.Web.FullTrack track)
     {
         try
