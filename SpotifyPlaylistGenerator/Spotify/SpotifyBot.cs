@@ -129,8 +129,8 @@ public class SpotifyBot
                     index++;
                     if (percentageFormatted % 3 == 0)
                     {
-                        Console.WriteLine($"GetGenreArtists: {artist.Name} - Completed:  {percentageFormatted}%");
-                        Console.WriteLine($"GetGenreArtists: Genre - Completed:  {genrePercentageFormatted}%");
+                        Console.WriteLine($"GetGenreArtists Completed:  {percentageFormatted}%");
+                        Console.WriteLine($"GetGenreArtists Genre Completed:  {genrePercentageFormatted}%");
                     }
                 }
                 genreIndex++;
@@ -168,7 +168,6 @@ public class SpotifyBot
                 if (percentageFormatted % 12 == 0)
                 {
                     Console.WriteLine($"GetArtistAlbums: {artist.Name} - Completed:  {percentageFormatted}%");
-                    // System.Threading.Thread.Sleep(10000);
                 }
                 if (ExclusionAlbums.Find(ea => ea == album.Name) is not null)
                 {
@@ -222,10 +221,13 @@ public class SpotifyBot
                 if (percentageFormatted % 5 == 0)
                 {
                     Console.WriteLine($"GetAlbumTracks: {album.Name} - Completed:  {percentageFormatted}%");
-                    System.Threading.Thread.Sleep(5000);
                 }
 
-                if (SongURIS.Find(uri => uri == track.Uri) is not null) continue;
+                if (SongURIS.Find(uri => uri == track.Uri) is not null)
+                {
+                    Console.WriteLine($"GetAlbumTracks: {track.Uri} - Already Processed");
+                    continue;
+                }
 
                 SongURIS.Add(track.Uri);
                 albumTrackUris.Add(track.Uri);
@@ -331,8 +333,7 @@ public class SpotifyBot
         if (trackURIs.Count == 0) return;
         try
         {
-            Console.WriteLine($"Adding Tracks to playlist: {trackURIs.Count()} ");
-
+            Console.WriteLine($"Adding {trackURIs.Count()} Tracks to playlist. Total Playlist Tracks {SongURIS.Count()} ");
             PlaylistAddItemsRequest request = new PlaylistAddItemsRequest(trackURIs);
             var update = await _spotify.Playlists.AddItems(_playlistID, request);
         }

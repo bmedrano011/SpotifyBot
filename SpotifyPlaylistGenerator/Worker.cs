@@ -32,7 +32,6 @@ public class Worker : BackgroundService
         {
             await StartAuthentication(clientId);
         }
-
     }
 
     private async Task<AccessToken> GetToken()
