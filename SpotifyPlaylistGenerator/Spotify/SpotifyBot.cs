@@ -327,6 +327,7 @@ public class SpotifyBot
         {
             Console.WriteLine(ex);
         }
+
     }
     private async Task AddSongsToPlaylist(List<string> trackURIs)
     {
